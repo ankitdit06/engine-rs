@@ -40,18 +40,18 @@ jobs:
             ${{ matrix.docker_image }} \
             bash -c '
               set -e
-              # Install Rust
-              curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
-              source $HOME/.cargo/env
-              
-              # Install cross-compilation tools
+              # Install dependencies first (including curl)
               apt-get update
               apt-get install -y \
+                curl \
                 gcc-aarch64-linux-gnu \
                 g++-aarch64-linux-gnu \
                 binutils \
-                file \
-                curl
+                file
+              
+              # Install Rust
+              curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+              source $HOME/.cargo/env
               
               # Configure cross-linker for ARM64
               if [ "$TARGET" = "aarch64-unknown-linux-gnu" ]; then
