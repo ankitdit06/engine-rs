@@ -1,4 +1,4 @@
-name: Build Engine SO
+name: Build Engine SO Multi-Arch
 
 on:
   push:
@@ -9,6 +9,27 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
+    strategy:
+      matrix:
+        include:
+          # GLIBC TARGETS
+          - target: x86_64-unknown-linux-gnu
+            arch_name: amd64
+            libc: gnu
+
+          - target: aarch64-unknown-linux-gnu
+            arch_name: arm64
+            libc: gnu
+
+          # MUSL TARGETS (for Alpine)
+          - target: x86_64-unknown-linux-musl
+            arch_name: amd64
+            libc: musl
+
+          - target: aarch64-unknown-linux-musl
+            arch_name: arm64
+            libc: musl
+
     steps:
       - uses: actions/checkout@v3
 
@@ -16,37 +37,46 @@ jobs:
         uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
-          target: x86_64-unknown-linux-gnu
+          target: ${{ matrix.target }}
           override: true
 
       - name: Install Build Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential file
+          # Needed for cross compilation
+          sudo apt-get install -y \
+            gcc-aarch64-linux-gnu \
+            g++-aarch64-linux-gnu \
+            musl-tools \
+            file
 
       - name: Cargo Clean
         run: cargo clean
 
-      - name: Build Linux .so (x86_64-unknown-linux-gnu)
+      - name: Build Engine SO for ${{ matrix.target }}
         run: |
-          cargo build --release --target x86_64-unknown-linux-gnu
+          cargo build --release --target ${{ matrix.target }}
 
-      - name: Verify .so is valid ELF
+      - name: Rename Output
         run: |
-          file target/x86_64-unknown-linux-gnu/release/libengine.so
-          ldd target/x86_64-unknown-linux-gnu/release/libengine.so
+          SRC="target/${{ matrix.target }}/release/libengine.so"
+          OUT="libengine-${{ matrix.arch_name }}-${{ matrix.libc }}.so"
+          cp "$SRC" "$OUT"
+          echo "Generated artifact: $OUT"
 
-      - name: Rename Artifact
+      - name: Verify ELF + Dependencies
         run: |
-          cp target/x86_64-unknown-linux-gnu/release/libengine.so libengine-x86_64-unknown-linux-gnu.so
+          file libengine-${{ matrix.arch_name }}-${{ matrix.libc }}.so
+          # ldd fails for musl builds, so ignore errors
+          ldd libengine-${{ matrix.arch_name }}-${{ matrix.libc }}.so || true
 
-      - name: Upload .so to GitHub Release
+      - name: Upload Release Assets
         uses: softprops/action-gh-release@v1
         with:
           tag_name: latest
           draft: false
           prerelease: false
           files: |
-            libengine-x86_64-unknown-linux-gnu.so
+            libengine-${{ matrix.arch_name }}-${{ matrix.libc }}.so
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
