@@ -12,7 +12,7 @@ jobs:
     strategy:
       matrix:
         include:
-          # GLIBC TARGETS
+          # GLIBC TARGETS (musl doesn't support cdylib/dynamic libraries)
           - target: x86_64-unknown-linux-gnu
             arch_name: amd64
             libc: gnu
@@ -20,11 +20,6 @@ jobs:
           - target: aarch64-unknown-linux-gnu
             arch_name: arm64
             libc: gnu
-
-          # MUSL TARGET (x86_64 only)
-          - target: x86_64-unknown-linux-musl
-            arch_name: amd64
-            libc: musl
 
     steps:
       - uses: actions/checkout@v4
@@ -46,7 +41,6 @@ jobs:
           sudo apt-get install -y \
             gcc-aarch64-linux-gnu \
             g++-aarch64-linux-gnu \
-            musl-tools \
             file
 
       # -----------------------------
