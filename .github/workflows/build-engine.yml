@@ -29,6 +29,9 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
+      # -----------------------------
+      # Install Rust for target
+      # -----------------------------
       - name: Install Rust Toolchain
         uses: actions-rs/toolchain@v1
         with:
@@ -36,6 +39,9 @@ jobs:
           target: ${{ matrix.target }}
           override: true
 
+      # -----------------------------
+      # Install necessary compilers
+      # -----------------------------
       - name: Install Build Dependencies
         run: |
           sudo apt-get update
@@ -45,25 +51,52 @@ jobs:
             musl-tools \
             file
 
+      # -----------------------------
+      # Create cross-compilation config for ARM64
+      # -----------------------------
+      - name: Configure Cross Linkers
+        run: |
+          mkdir -p .cargo
+          cat <<EOF > .cargo/config.toml
+[target.aarch64-unknown-linux-gnu]
+linker = "aarch64-linux-gnu-gcc"
+ar = "aarch64-linux-gnu-ar"
+EOF
+
+      # -----------------------------
+      # Clean before build
+      # -----------------------------
       - name: Cargo Clean
         run: cargo clean
 
+      # -----------------------------
+      # Build shared library (.so)
+      # -----------------------------
       - name: Build Engine SO for ${{ matrix.target }}
         run: |
           cargo build --release --target ${{ matrix.target }}
 
-      - name: Rename Output
+      # -----------------------------
+      # Package artifact with name including arch+libc
+      # -----------------------------
+      - name: Rename Artifact
         run: |
           SRC="target/${{ matrix.target }}/release/libengine.so"
           OUT="libengine-${{ matrix.arch_name }}-${{ matrix.libc }}.so"
           cp "$SRC" "$OUT"
           echo "Generated: $OUT"
 
+      # -----------------------------
+      # Verify ELF and dependencies
+      # -----------------------------
       - name: Verify ELF + Dependencies
         run: |
           file libengine-${{ matrix.arch_name }}-${{ matrix.libc }}.so
           ldd libengine-${{ matrix.arch_name }}-${{ matrix.libc }}.so || true
 
+      # -----------------------------
+      # Upload to GitHub Release
+      # -----------------------------
       - name: Upload Release Assets
         uses: softprops/action-gh-release@v1
         with:
