@@ -1,0 +1,34 @@
+name: Build Engine SO
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+
+      - name: Build Linux .so
+        run: |
+          cargo build --release
+
+      - name: Upload .so as GitHub Release Asset
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: latest
+          draft: false
+          prerelease: false
+          files: |
+            target/release/libengine.so
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
