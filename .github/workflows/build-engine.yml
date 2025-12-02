@@ -21,13 +21,9 @@ jobs:
             arch_name: arm64
             libc: gnu
 
-          # MUSL TARGETS (for Alpine)
+          # MUSL TARGET (x86_64 only)
           - target: x86_64-unknown-linux-musl
             arch_name: amd64
-            libc: musl
-
-          - target: aarch64-unknown-linux-musl
-            arch_name: arm64
             libc: musl
 
     steps:
@@ -43,7 +39,6 @@ jobs:
       - name: Install Build Dependencies
         run: |
           sudo apt-get update
-          # Needed for cross compilation
           sudo apt-get install -y \
             gcc-aarch64-linux-gnu \
             g++-aarch64-linux-gnu \
@@ -62,12 +57,11 @@ jobs:
           SRC="target/${{ matrix.target }}/release/libengine.so"
           OUT="libengine-${{ matrix.arch_name }}-${{ matrix.libc }}.so"
           cp "$SRC" "$OUT"
-          echo "Generated artifact: $OUT"
+          echo "Generated: $OUT"
 
       - name: Verify ELF + Dependencies
         run: |
           file libengine-${{ matrix.arch_name }}-${{ matrix.libc }}.so
-          # ldd fails for musl builds, so ignore errors
           ldd libengine-${{ matrix.arch_name }}-${{ matrix.libc }}.so || true
 
       - name: Upload Release Assets
