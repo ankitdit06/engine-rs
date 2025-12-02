@@ -1,0 +1,12 @@
+[package]
+name = "engine"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+# cdylib = C-compatible dynamic library (.so/.dylib)
+crate-type = ["cdylib"]
+
+[dependencies]
+base64 = "0.22"
+once_cell = "1.19"
