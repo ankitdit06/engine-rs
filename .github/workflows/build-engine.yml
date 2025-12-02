@@ -7,7 +7,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
 
     strategy:
       matrix:
@@ -16,77 +16,66 @@ jobs:
           - target: x86_64-unknown-linux-gnu
             arch_name: amd64
             libc: gnu
+            docker_image: debian:bullseye
 
           - target: aarch64-unknown-linux-gnu
             arch_name: arm64
             libc: gnu
+            docker_image: debian:bullseye
 
     steps:
       - uses: actions/checkout@v4
 
       # -----------------------------
-      # Install Rust for target
-      # -----------------------------
-      - name: Install Rust Toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
-
-      # -----------------------------
-      # Install necessary compilers
-      # -----------------------------
-      - name: Install Build Dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            gcc-aarch64-linux-gnu \
-            g++-aarch64-linux-gnu \
-            binutils \
-            file
-
-      # -----------------------------
-      # Create cross-compilation config for ARM64
-      # -----------------------------
-      - name: Configure Cross Linkers
-        run: |
-          mkdir -p .cargo
-          echo '[target.aarch64-unknown-linux-gnu]' > .cargo/config.toml
-          echo 'linker = "aarch64-linux-gnu-gcc"' >> .cargo/config.toml
-          echo 'ar = "aarch64-linux-gnu-ar"' >> .cargo/config.toml
-
-      # -----------------------------
-      # Clean before build
-      # -----------------------------
-      - name: Cargo Clean
-        run: cargo clean
-
-      # -----------------------------
-      # Build shared library (.so)
+      # Build in Docker with older GLIBC base image
       # -----------------------------
       - name: Build Engine SO for ${{ matrix.target }}
         run: |
-          cargo build --release --target ${{ matrix.target }}
-
-      # -----------------------------
-      # Package artifact with name including arch+libc
-      # -----------------------------
-      - name: Rename Artifact
-        run: |
-          SRC="target/${{ matrix.target }}/release/libengine.so"
-          OUT="libengine-${{ matrix.arch_name }}-${{ matrix.libc }}.so"
-          cp "$SRC" "$OUT"
-          echo "Generated: $OUT"
-
-      # -----------------------------
-      # Verify ELF and dependencies
-      # -----------------------------
-      - name: Verify ELF + Dependencies
-        run: |
-          file libengine-${{ matrix.arch_name }}-${{ matrix.libc }}.so
-          echo "=== GLIBC version requirements ==="
-          objdump -T libengine-${{ matrix.arch_name }}-${{ matrix.libc }}.so | grep GLIBC || true
-          echo "=== Dynamic dependencies ==="
-          ldd libengine-${{ matrix.arch_name }}-${{ matrix.libc }}.so || true
+          docker run --rm \
+            -v "$PWD:/workspace" \
+            -w /workspace \
+            -e TARGET="${{ matrix.target }}" \
+            -e ARCH_NAME="${{ matrix.arch_name }}" \
+            -e LIBC="${{ matrix.libc }}" \
+            ${{ matrix.docker_image }} \
+            bash -c '
+              set -e
+              # Install Rust
+              curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+              source $HOME/.cargo/env
+              
+              # Install cross-compilation tools
+              apt-get update
+              apt-get install -y \
+                gcc-aarch64-linux-gnu \
+                g++-aarch64-linux-gnu \
+                binutils \
+                file \
+                curl
+              
+              # Configure cross-linker for ARM64
+              if [ "$TARGET" = "aarch64-unknown-linux-gnu" ]; then
+                mkdir -p .cargo
+                echo "[target.aarch64-unknown-linux-gnu]" > .cargo/config.toml
+                echo "linker = \"aarch64-linux-gnu-gcc\"" >> .cargo/config.toml
+                echo "ar = \"aarch64-linux-gnu-ar\"" >> .cargo/config.toml
+              fi
+              
+              # Add target and build
+              rustup target add "$TARGET"
+              cargo build --release --target "$TARGET"
+              
+              # Copy output
+              cp "target/$TARGET/release/libengine.so" "libengine-$ARCH_NAME-$LIBC.so"
+              
+              # Verify
+              echo "=== File info ==="
+              file "libengine-$ARCH_NAME-$LIBC.so"
+              echo "=== GLIBC version requirements ==="
+              objdump -T "libengine-$ARCH_NAME-$LIBC.so" | grep GLIBC || true
+              echo "=== Dynamic dependencies ==="
+              ldd "libengine-$ARCH_NAME-$LIBC.so" || true
+            '
 
       # -----------------------------
       # Upload artifact for later release
@@ -100,7 +89,7 @@ jobs:
 
   release:
     needs: build
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     
     steps:
