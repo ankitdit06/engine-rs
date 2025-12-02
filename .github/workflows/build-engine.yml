@@ -12,23 +12,41 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: Install Rust
+      - name: Install Rust Toolchain
         uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
+          target: x86_64-unknown-linux-gnu
           override: true
 
-      - name: Build Linux .so
+      - name: Install Build Dependencies
         run: |
-          cargo build --release
+          sudo apt-get update
+          sudo apt-get install -y build-essential file
 
-      - name: Upload .so as GitHub Release Asset
+      - name: Cargo Clean
+        run: cargo clean
+
+      - name: Build Linux .so (x86_64-unknown-linux-gnu)
+        run: |
+          cargo build --release --target x86_64-unknown-linux-gnu
+
+      - name: Verify .so is valid ELF
+        run: |
+          file target/x86_64-unknown-linux-gnu/release/libengine.so
+          ldd target/x86_64-unknown-linux-gnu/release/libengine.so
+
+      - name: Rename Artifact
+        run: |
+          cp target/x86_64-unknown-linux-gnu/release/libengine.so libengine-x86_64-unknown-linux-gnu.so
+
+      - name: Upload .so to GitHub Release
         uses: softprops/action-gh-release@v1
         with:
           tag_name: latest
           draft: false
           prerelease: false
           files: |
-            target/release/libengine.so
+            libengine-x86_64-unknown-linux-gnu.so
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
