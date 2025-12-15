@@ -12,7 +12,16 @@ jobs:
     strategy:
       matrix:
         include:
-          # GLIBC TARGETS (musl doesn't support cdylib/dynamic libraries)
+          # MUSL targets (for Alpine/OpenResty)
+          - target: x86_64-unknown-linux-musl
+            arch_name: amd64
+            libc: musl
+
+          - target: aarch64-unknown-linux-musl
+            arch_name: arm64
+            libc: musl
+
+          # GNU targets (for Debian/Ubuntu images)
           - target: x86_64-unknown-linux-gnu
             arch_name: amd64
             libc: gnu
@@ -24,52 +33,27 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # -----------------------------
-      # Install Rust for target
-      # -----------------------------
       - name: Install Rust Toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
 
-      # -----------------------------
-      # Install necessary compilers
-      # -----------------------------
-      - name: Install Build Dependencies
+      - name: Install tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            gcc-aarch64-linux-gnu \
-            g++-aarch64-linux-gnu \
-            binutils \
-            file
+          sudo apt-get install -y file binutils
 
-      # -----------------------------
-      # Create cross-compilation config for ARM64
-      # -----------------------------
-      - name: Configure Cross Linkers
-        run: |
-          mkdir -p .cargo
-          echo '[target.aarch64-unknown-linux-gnu]' > .cargo/config.toml
-          echo 'linker = "aarch64-linux-gnu-gcc"' >> .cargo/config.toml
-          echo 'ar = "aarch64-linux-gnu-ar"' >> .cargo/config.toml
+      # Install cross (uses Docker to build correct toolchains)
+      - name: Install cross
+        run: cargo install cross --locked
 
-      # -----------------------------
-      # Clean before build
-      # -----------------------------
       - name: Cargo Clean
         run: cargo clean
 
-      # -----------------------------
-      # Build shared library (.so)
-      # -----------------------------
       - name: Build Engine SO for ${{ matrix.target }}
         run: |
-          cargo build --release --target ${{ matrix.target }}
+          cross build --release --target ${{ matrix.target }}
 
-      # -----------------------------
-      # Package artifact with name including arch+libc
-      # -----------------------------
       - name: Rename Artifact
         run: |
           SRC="target/${{ matrix.target }}/release/libengine.so"
@@ -77,20 +61,14 @@ jobs:
           cp "$SRC" "$OUT"
           echo "Generated: $OUT"
 
-      # -----------------------------
-      # Verify ELF and dependencies
-      # -----------------------------
-      - name: Verify ELF + Dependencies
+      - name: Verify ELF + Linkage
         run: |
           file libengine-${{ matrix.arch_name }}-${{ matrix.libc }}.so
-          echo "=== GLIBC version requirements ==="
-          objdump -T libengine-${{ matrix.arch_name }}-${{ matrix.libc }}.so | grep GLIBC || true
-          echo "=== Dynamic dependencies ==="
+          echo "=== Interpreter (musl vs glibc) ==="
+          readelf -l libengine-${{ matrix.arch_name }}-${{ matrix.libc }}.so | grep -i interpreter || true
+          echo "=== Dynamic dependencies (best effort) ==="
           ldd libengine-${{ matrix.arch_name }}-${{ matrix.libc }}.so || true
 
-      # -----------------------------
-      # Upload artifact for later release
-      # -----------------------------
       - name: Upload Build Artifact
         uses: actions/upload-artifact@v4
         with:
@@ -102,21 +80,15 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
-    
+
     steps:
       - uses: actions/checkout@v4
 
-      # -----------------------------
-      # Download all artifacts
-      # -----------------------------
       - name: Download All Artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts
 
-      # -----------------------------
-      # Create or update GitHub Release
-      # -----------------------------
       - name: Create/Update Release
         uses: softprops/action-gh-release@v2
         with:
